@@ -1,4 +1,4 @@
-data/
+/data/
 *.pt
 /modded-nanogpt/data/fineweb10B/
 *.bin
