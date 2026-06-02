@@ -10,9 +10,9 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
-import uuid
 import time
 from pathlib import Path
+from datetime import datetime
 
 import torch
 from torch import Tensor, nn
@@ -229,8 +229,13 @@ assert 8 % dist.get_world_size() == 0
 # logging setup
 if dist.get_rank() == 0:
     os.makedirs("logs", exist_ok=True)
-    logfile = f"logs/{uuid.uuid4()}.txt"
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    model_dir = f"logs/{timestamp}"
+    os.makedirs(model_dir, exist_ok=True)
+    logfile = f"{model_dir}/{timestamp}.txt"
     print(logfile)
+save_every = 300
+
 def print0(s, console=False, log=True):
     if dist.get_rank() == 0:
         if console:
@@ -377,6 +382,8 @@ for _ in range(num_trials):
         for opt in optimizers:
             opt.step()
         model.zero_grad(set_to_none=True)
+        if (step + 1) % save_every == 0 and dist.get_rank() == 0:
+            torch.save(model.state_dict(), f"{model_dir}/{step + 1}.pt")
         approx_training_time = training_time + (time.perf_counter() - t0)
         step_time = time.perf_counter() - step_start
         step_start = time.perf_counter()

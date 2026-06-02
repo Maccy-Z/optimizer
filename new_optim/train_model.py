@@ -22,14 +22,17 @@ class MLP(nn.Module):
         
         self.w2 = nn.Parameter(torch.empty(128, 512))
         self.b2 = nn.Parameter(torch.empty(128))
-        
+
+        self.w2a = nn.Parameter(torch.empty(128, 128))
+        self.b2a = nn.Parameter(torch.empty(128))
+
         self.w3 = nn.Parameter(torch.empty(10, 128))
         self.b3 = nn.Parameter(torch.empty(10))
 
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
-        for w, b in [(self.w1, self.b1), (self.w2, self.b2), (self.w3, self.b3)]:
+        for w, b in [(self.w1, self.b1), (self.w2, self.b2), (self.w2a, self.b2a), (self.w3, self.b3)]:
             nn.init.kaiming_uniform_(w, a=math.sqrt(5))
             if w.size(1) > 0:
                 bound = 1 / math.sqrt(w.size(1))
@@ -42,6 +45,8 @@ class MLP(nn.Module):
         x = F.linear(x, self.w1, self.b1)
         x = F.relu(x)
         x = ManualLinear.apply(x, self.w2, None, track_dict)
+        x = F.relu(x)
+        x = F.linear(x, self.w2a, self.b2a)
         x = F.relu(x)
         x = F.linear(x, self.w3, self.b3)
 
@@ -64,6 +69,7 @@ def train_one_epoch(model: nn.Module, train_loader: DataLoader, criterion: nn.Mo
         total_loss += loss.item()
 
     return total_loss / len(train_loader)
+
 
 def sweep_learning_rates(epochs: int = 5) -> float:
     lrs = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
@@ -94,6 +100,7 @@ def sweep_learning_rates(epochs: int = 5) -> float:
     print(f"\nBest LR found: {best_lr} with validation accuracy: {best_val_acc:.4f}")
     return best_lr
 
+
 def main() -> None:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Starting training on {device}...")
@@ -120,6 +127,7 @@ def main() -> None:
     print("Training finished!")
 
     torch.save(tracking, "tracking.pt")
+
 
 if __name__ == '__main__':
     # sweep_learning_rates()

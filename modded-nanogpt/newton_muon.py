@@ -1,5 +1,6 @@
-
 import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
@@ -396,8 +397,9 @@ print0("="*100)
 
 val_tokens = 20 * 524288
 batch_size = 8 * 64 * 1024
-mbs = 64
+mbs = 16
 val_inputs, val_targets = next(distributed_data_generator("data/fineweb10B/fineweb_val_*.bin", val_tokens))
+val_inputs, val_targets = val_inputs.cpu(), val_targets.cpu()
 
 model = GPT(vocab_size=50304, num_layers=12, model_dim=768).cuda()
 attach_precond_stats(model)
@@ -484,6 +486,8 @@ for _ in range(num_trials):
     dist.barrier()
     t0 = time.perf_counter()
     for step in range(train_steps + 1):
+        step_start = time.perf_counter()
+
 
         # --------------- VALIDATION SECTION -----------------
         val_step_freq = 125 if step / train_steps < 0.9 else 25
@@ -491,7 +495,6 @@ for _ in range(num_trials):
             # stop the clock
             dist.barrier()
             time_since_last_val = time.perf_counter() - t0
-            step_avg = time_since_last_val / (step - last_val_step) if step > 0 else float("nan")
             last_val_step = step
             training_time += time_since_last_val
             model.eval()
@@ -499,11 +502,13 @@ for _ in range(num_trials):
             with torch.no_grad():
                 assert len(val_inputs) % mbs == 0
                 for i in range(len(val_inputs) // mbs):
-                    val_loss += model(val_inputs[i*mbs:(i+1)*mbs], val_targets[i*mbs:(i+1)*mbs])
+                    inp = val_inputs[i*mbs:(i+1)*mbs].to(device=device, non_blocking=True)
+                    tgt = val_targets[i*mbs:(i+1)*mbs].to(device=device, non_blocking=True)
+                    val_loss += model(inp, tgt)
             dist.all_reduce(val_loss, op=dist.ReduceOp.SUM)
             val_loss /= val_tokens
-            print0(f"step:{step}/{train_steps} val_loss:{val_loss:.5f} train_time:{training_time:.3f}s"
-                   + f" step_avg:{1000*step_avg:.2f}ms", console=True)
+            print0(f"step:{step}/{train_steps} val_loss:{val_loss:.5f}"
+                   + f" step_time:{time_since_last_val:.3f}s", console=True)
             model.train()
             # start the clock again
             dist.barrier()
@@ -532,6 +537,6 @@ for _ in range(num_trials):
         model.zero_grad(set_to_none=True)
         approx_training_time = training_time + (time.perf_counter() - t0)
         print0(f"step:{step+1}/{train_steps} train_time:{approx_training_time:.3f}s"
-               + f" step_avg:{1000*approx_training_time/(step + 1):.2f}ms", console=True, log=False)
+               + f" step_time:{time.perf_counter() - step_start:.3f}s", console=True, log=False)
 
 dist.destroy_process_group()
