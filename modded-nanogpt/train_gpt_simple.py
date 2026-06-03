@@ -330,6 +330,14 @@ for _ in range(num_trials):
     train_loader = distributed_data_generator("data/fineweb10B/fineweb_train_*.bin", batch_size)
     for p in model.parameters():
         dist.broadcast(p.detach(), 0)
+
+    # save model at step 0 before any training
+    if dist.get_rank() == 0:
+        with torch.no_grad():
+            torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()},
+                       f"{model_dir}/0.pt")
+    dist.barrier()
+
     # start the clock
     training_time = 0
     last_val_step = 0
@@ -383,7 +391,10 @@ for _ in range(num_trials):
             opt.step()
         model.zero_grad(set_to_none=True)
         if (step + 1) % save_every == 0 and dist.get_rank() == 0:
-            torch.save(model.state_dict(), f"{model_dir}/{step + 1}.pt")
+            with torch.no_grad():
+                torch.save({k: v.detach().cpu() for k, v in model.state_dict().items()},
+                           f"{model_dir}/{step + 1}.pt")
+            dist.barrier()
         approx_training_time = training_time + (time.perf_counter() - t0)
         step_time = time.perf_counter() - step_start
         step_start = time.perf_counter()

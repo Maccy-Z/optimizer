@@ -47,7 +47,7 @@ def regress(u, v, m, tol=1e-8, eps=1e-8):
         mj = m[:, j]
         keep = mj.abs() > tol
 
-        if keep.sum() == 0:
+        if keep.sum() <= 1:
             continue
 
         Uj = u[keep]
@@ -55,7 +55,6 @@ def regress(u, v, m, tol=1e-8, eps=1e-8):
 
         # Scale after masking, specific to this output j
         v_scale = Vj.std().clamp_min(eps)
-
         Vj_scaled = Vj / v_scale
 
         beta_scaled = torch.linalg.lstsq(
@@ -107,70 +106,81 @@ def fit_model_u(u_reg):
 
 def main():
     u, v, acts = load_data()
-    st, end = 1000, 1050
+    train_st1, train_end1 = 700, 712
+    val_st, val_end = 712, 714
+    train_st2, train_end2 = 714, 730
 
-    u_reg, v_reg, acts_reg = u[st:end], v[st:end], acts[st:end]
-    u_reg, v_reg, acts_reg = u_reg.flatten(0, 1), v_reg.flatten(0, 1), acts_reg.flatten(0, 1)
-    # v_reg = v_reg[:, 2:3]
-    # acts_reg = acts_reg[:, 2:3]
+    u_train = torch.cat([u[train_st1:train_end1], u[train_st2:train_end2]], dim=0)
+    v_train = torch.cat([v[train_st1:train_end1], v[train_st2:train_end2]], dim=0)
+    acts_train = torch.cat([acts[train_st1:train_end1], acts[train_st2:train_end2]], dim=0)
 
-    print(f'{u_reg.shape = }, {v_reg.shape = }')
+    u_train, v_train, acts_train = u_train.flatten(0, 1), v_train.flatten(0, 1), acts_train.flatten(0, 1)
 
-    # # Plotting
-    # from matplotlib import pyplot as plt
-    # # plt.hist(v_reg[:, 2], bins=20)
-    # plt.scatter(u_reg[:, 5], v_reg[:, 5], cmap='viridis')
-    # plt.show()
+    u_val, v_val, acts_val = u[val_st:val_end], v[val_st:val_end], acts[val_st:val_end]
+    u_val, v_val, acts_val = u_val.flatten(0, 1), v_val.flatten(0, 1), acts_val.flatten(0, 1)
 
+    print(f'{u_train.shape = }, {v_train.shape = }')
+    print(f'{u_val.shape = }, {v_val.shape = }')
 
     # Append on bias column for u
-    u_reg = torch.cat([u_reg, torch.ones((u_reg.shape[0], 1))], dim=1)
+    u_train = torch.cat([u_train, torch.ones((u_train.shape[0], 1))], dim=1)
+    u_val = torch.cat([u_val, torch.ones((u_val.shape[0], 1))], dim=1)
 
     # Filter out zero values if act<0
-    mask = (acts_reg>0).float()
-    # mask = torch.ones_like(mask)
+    mask_train = (acts_train>0).float()
+    mask_val = (acts_val>0).float()
+    # mask_train, mask_val = torch.ones_like(mask_train), torch.ones_like(mask_val)
 
-    A_hat = regress(u_reg, v_reg, mask)
+    A_hat = regress(u_train, v_train, mask_train)
 
     print(f'{A_hat.shape = }')
 
-    v_hat = u_reg @ A_hat * mask
-    resid = v_reg - v_hat
-    mse = (resid ** 2).mean()
-    r2 = 1 - mse / v_reg.var()
-    print(f'{mse = }, {r2 = }')
+    v_hat_train = u_train @ A_hat * mask_train
+    resid_train = v_train - v_hat_train
+    mse_train = (resid_train ** 2).mean()
+    r2_train = 1 - mse_train / v_train.var()
+    print(f'Train Simple: {mse_train = }, {r2_train = }')
 
+    v_hat_val = u_val @ A_hat * mask_val
+    resid_val = v_val - v_hat_val
+    mse_val = (resid_val ** 2).mean()
+    r2_val = 1 - mse_val / v_val.var()
+    print(f'Val Simple: {mse_val = }, {r2_val = }')
 
-    plt.scatter(v_hat[:, 3], resid[:, 3], alpha=0.1, label='Residual')
+    plt.scatter(v_hat_train[:, 0], resid_train[:, 0], alpha=0.1, label='Train Residual')
+    plt.scatter(v_hat_val[:, 0], resid_val[:, 0], alpha=0.1, label='Val Residual')
+    plt.legend()
     plt.show()
 
-    # Try fitting more complex model
-    u_reg2 = torch.cat([u_reg,], dim=1)
-    # print(f'{u_reg2.shape = }')
-    model2 = AUSigmoidBU(u_reg2.shape[1], v_reg.shape[1])
-    model2.fit(u_reg2, v_reg, mask, acts_reg)
-    v_hat2 = model2.forward(u_reg2, mask, acts_reg).detach()
-    resid2 = v_reg - v_hat2
-    mse2 = (resid2 ** 2).mean()
-    r22 = 1 - mse2 / v_reg.var()
-    print(f'{mse2 = }, {r22 = }')
+    # # Try fitting more complex model
+    # u_train2 = torch.cat([u_train,], dim=1)
+    # u_val2 = torch.cat([u_val,], dim=1)
+    # # print(f'{u_train2.shape = }')
+    # model2 = AUSigmoidBU(u_train2.shape[1], v_train.shape[1])
+    # model2.fit(u_train2, v_train, mask_train, acts_train)
+    #
+    # v_hat2_train = model2.forward(u_train2, mask_train, acts_train).detach()
+    # resid2_train = v_train - v_hat2_train
+    # mse2_train = (resid2_train ** 2).mean()
+    # r22_train = 1 - mse2_train / v_train.var()
+    # print(f'Train Complex: mse = {mse2_train}, r2 = {r22_train}')
+    #
+    # v_hat2_val = model2.forward(u_val2, mask_val, acts_val).detach()
+    # resid2_val = v_val - v_hat2_val
+    # mse2_val = (resid2_val ** 2).mean()
+    # r22_val = 1 - mse2_val / v_val.var()
+    # print(f'Val Complex: mse = {mse2_val}, r2 = {r22_val}')
+    #
+    # plt.scatter(v_hat2_train[:, 0], resid2_train[:, 0], alpha=0.1, label='Train Residual')
+    # plt.scatter(v_hat2_val[:, 0], resid2_val[:, 0], alpha=0.1, label='Val Residual')
+    # plt.legend()
+    # plt.show()
 
-    plt.scatter(v_hat2[:, 3], resid2[:, 3], alpha=0.1, label='Residual')
-    plt.show()
-
-    A_hat2 = model2.A.detach()
-    # Plot SVD spectrum of A
-    plot_svd_spectrum(A_hat, title="SVD spectrum of A")
-    plot_svd_spectrum(A_hat2, title="SVD spectrum of A2")
-
-    # g = u_reg.T @ v_reg
-    # plot_svd_spectrum(g, title="SVD spectrum of G")
-    # c = u_reg.T @ u_reg
-    # print(f'{c.shape = }')
-    # plot_svd_spectrum(c, title="SVD spectrum of C")
-    # print(g.shape)
+    # A_hat2 = model2.A.detach()
+    # # Plot SVD spectrum of A
+    # plot_svd_spectrum(A_hat, title="SVD spectrum of A")
+    # plot_svd_spectrum(A_hat2, title="SVD spectrum of A2")
 
 
 if __name__ == "__main__":
     main()
-

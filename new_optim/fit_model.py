@@ -17,12 +17,12 @@ class AUSigmoidBU(nn.Module):
         self.B = nn.Parameter(torch.randn(in_dim, in_dim) * 0.01)
 
     def forward(self, u, m, a):
-        return ((torch.sigmoid(u @ self.B.T) * u) @ self.A.T) * m
+        return ((torch.sigmoid(u @ self.B) * u) @ self.A.T) * m
 
     def fit(
         self,
         u, v, m, a,
-        lr=1e-3, steps=2000, weight_decay=0.0, verbose=False,
+        lr=1e-3, steps=1000, weight_decay=0.0, verbose=False,
     ):
         optimizer = optim.Adam(
             self.parameters(),

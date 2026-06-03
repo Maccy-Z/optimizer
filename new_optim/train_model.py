@@ -17,7 +17,7 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.flatten = nn.Flatten()
         
-        self.w1 = nn.Parameter(torch.empty(512, 28 * 28))
+        self.w1 = nn.Parameter(torch.empty(512, 32 * 32 * 3))
         self.b1 = nn.Parameter(torch.empty(512))
         
         self.w2 = nn.Parameter(torch.empty(128, 512))
@@ -113,7 +113,7 @@ def main() -> None:
 
     tracking = []
 
-    epochs = 10
+    epochs = 2
     for epoch in range(epochs):
         start_time = time.time()
 
