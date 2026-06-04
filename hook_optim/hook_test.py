@@ -4,7 +4,8 @@ import torch.nn.functional as F
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class HookOptimiser:
+
+class SGDHookOptimiser:
     def __init__(self, model, lr=0.01, momentum=0.9):
         self.model = model
         self.lr = lr
@@ -14,11 +15,20 @@ class HookOptimiser:
         self.setup_hooks(model)
 
     def generate_hook(self, param):
-        mom_buffer = self.mom_buffers[param]
-
+        """ This hook runs after gradients are computed for each parameter.
+            The weight update / optimizer step is done here, instead of at the end of each step.
+            The gradient can be immediately set to 0 to reduce memory consumption.
+        """
         def hook(w):
-            mom_buffer.mul_(0.9).add_(w.grad)
-            w.add_(w.grad, alpha=-0.01)
+            """ SGD update:
+                m <- mu * m + g
+                p <- p - lr * m
+            """
+
+            mom_buffer = self.mom_buffers[param]
+            mom_buffer.mul_(self.momentum).add_(w.grad)
+            w.add_(mom_buffer, alpha=-self.lr)
+            w.grad = None
             return
 
         return hook
@@ -27,12 +37,10 @@ class HookOptimiser:
         for n, p in model.named_parameters():
             p.register_post_accumulate_grad_hook(self.generate_hook(p))
 
-    def start_step(self):
-        for p in self.model.parameters():
-            if p.grad is not None:
-                p.grad = None
+    def zero_grad(self):
+        pass
 
-    def end_step(self):
+    def step(self):
         pass
 
 
@@ -55,16 +63,18 @@ class Model(torch.nn.Module):
 
 
 def main():
+    torch.manual_seed(0)
+
     Xs = torch.randn((50, 1), device=device)
     Ys = 2 * Xs**2 + 1
 
     model = Model().to(device)
     criterion = nn.MSELoss()
     # optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    optimizer = HookOptimiser(model, lr=0.01, momentum=0.9)
+    optimizer = SGDHookOptimiser(model, lr=0.01, momentum=0.9)
 
     for t in range(1000):
-        optimizer.start_step()
+        optimizer.zero_grad()
         # for n, p in model.named_parameters():
         #     if p.grad is not None:
         #         p.grad.mul_(0.9)
@@ -72,12 +82,11 @@ def main():
         y_pred = model(Xs)
         loss = criterion(y_pred, Ys)
         loss.backward()
-        optimizer.end_step()
+        optimizer.step()
 
         if t % 100 == 0:
             print(t, loss.item())
 
-        # exit(4)
 
     # Plotting
     from matplotlib import pyplot as plt

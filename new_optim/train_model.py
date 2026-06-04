@@ -13,45 +13,29 @@ torch.manual_seed(0)
 
 
 class MLP(nn.Module):
-    def __init__(self) -> None:
-        super(MLP, self).__init__()
-        self.flatten = nn.Flatten()
-        
-        self.w1 = nn.Parameter(torch.empty(512, 32 * 32 * 3))
-        self.b1 = nn.Parameter(torch.empty(512))
-        
-        self.w2 = nn.Parameter(torch.empty(128, 512))
-        self.b2 = nn.Parameter(torch.empty(128))
+    """A 4-layer MLP for CIFAR-10 classification."""
 
-        self.w2a = nn.Parameter(torch.empty(128, 128))
-        self.b2a = nn.Parameter(torch.empty(128))
+    def __init__(self, input_size=3 * 32 * 32, hidden_size=1280, num_classes=10, dropout=0.2):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(input_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, hidden_size, bias=False),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, hidden_size, bias=False),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, num_classes),
+        )
 
-        self.w3 = nn.Parameter(torch.empty(10, 128))
-        self.b3 = nn.Parameter(torch.empty(10))
-
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        for w, b in [(self.w1, self.b1), (self.w2, self.b2), (self.w2a, self.b2a), (self.w3, self.b3)]:
-            nn.init.kaiming_uniform_(w, a=math.sqrt(5))
-            if w.size(1) > 0:
-                bound = 1 / math.sqrt(w.size(1))
-                nn.init.uniform_(b, -bound, bound)
-
-    def forward(self, x: torch.Tensor, tracking:list[dict]) -> torch.Tensor:
-        track_dict = {}
-
-        x = self.flatten(x)
-        x = F.linear(x, self.w1, self.b1)
-        x = F.relu(x)
-        x = ManualLinear.apply(x, self.w2, None, track_dict)
-        x = F.relu(x)
-        x = F.linear(x, self.w2a, self.b2a)
-        x = F.relu(x)
-        x = F.linear(x, self.w3, self.b3)
-
-        tracking.append(track_dict)
-        return x
+    def forward(self, x, _):
+        return self.model(x)
 
 
 def train_one_epoch(model: nn.Module, train_loader: DataLoader, criterion: nn.Module,
@@ -61,6 +45,8 @@ def train_one_epoch(model: nn.Module, train_loader: DataLoader, criterion: nn.Mo
 
     for images, labels in train_loader:
         images, labels = images.to(device), labels.to(device)
+        if torch.rand(1).item() > 0.5:
+            images = torch.flip(images, dims=[3])
 
         optimizer.zero_grad()
         loss = criterion(model(images, tracking), labels)
@@ -107,13 +93,14 @@ def main() -> None:
 
     train_loader, val_loader = get_data_loaders(batch_size=512)
     model = MLP().to(device)
+    model = torch.compile(model)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
     tracking = []
 
-    epochs = 2
+    epochs = 10
     for epoch in range(epochs):
         start_time = time.time()
 

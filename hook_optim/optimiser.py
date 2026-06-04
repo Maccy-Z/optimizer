@@ -50,7 +50,7 @@ class SGD(Optimizer):
             raise ValueError(f"Invalid momentum value: {momentum}")
 
         defaults = dict(lr=lr, momentum=momentum)
-        super(SGD, self).__init__(params, defaults)
+        super().__init__(params, defaults)
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -72,4 +72,8 @@ class SGD(Optimizer):
         return loss
 
     def zero_grad(self, set_to_none: bool = True) -> None:
-        pass
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    p.grad.mul_(0.9)
+

@@ -106,9 +106,9 @@ def fit_model_u(u_reg):
 
 def main():
     u, v, acts = load_data()
-    train_st1, train_end1 = 700, 712
+    train_st1, train_end1 = 710, 712
     val_st, val_end = 712, 714
-    train_st2, train_end2 = 714, 730
+    train_st2, train_end2 = 714, 720
 
     u_train = torch.cat([u[train_st1:train_end1], u[train_st2:train_end2]], dim=0)
     v_train = torch.cat([v[train_st1:train_end1], v[train_st2:train_end2]], dim=0)
@@ -123,8 +123,10 @@ def main():
     print(f'{u_val.shape = }, {v_val.shape = }')
 
     # Append on bias column for u
-    u_train = torch.cat([u_train, torch.ones((u_train.shape[0], 1))], dim=1)
-    u_val = torch.cat([u_val, torch.ones((u_val.shape[0], 1))], dim=1)
+    # u_train = torch.cat([u_train, torch.ones((u_train.shape[0], 1))], dim=1)
+    # u_val = torch.cat([u_val, torch.ones((u_val.shape[0], 1))], dim=1)
+    u_train = torch.cat([torch.ones((u_train.shape[0], 1)), F.relu(acts_train)], dim=1)
+    u_val = torch.cat([torch.ones((u_val.shape[0], 1)), F.relu(acts_val)], dim=1)
 
     # Filter out zero values if act<0
     mask_train = (acts_train>0).float()
@@ -178,7 +180,7 @@ def main():
 
     # A_hat2 = model2.A.detach()
     # # Plot SVD spectrum of A
-    # plot_svd_spectrum(A_hat, title="SVD spectrum of A")
+    plot_svd_spectrum(A_hat, title="SVD spectrum of A")
     # plot_svd_spectrum(A_hat2, title="SVD spectrum of A2")
 
 
