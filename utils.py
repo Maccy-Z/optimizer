@@ -22,11 +22,10 @@ def validate(model: torch.nn.Module, val_loader: DataLoader, criterion: torch.nn
     model.eval()
     total_loss = 0.0
     correct = 0
-    tracking = []
     with torch.no_grad():
         for images, labels in val_loader:
             images, labels = images.to(device), labels.to(device)
-            outputs = model(images, tracking)
+            outputs = model(images)
             loss = criterion(outputs, labels)
             total_loss += loss.item()
 
