@@ -26,7 +26,7 @@ from huggingface_hub.dataclasses import strict
 
 from transformers.configuration_utils import PreTrainedConfig
 from transformers.utils import logging
-from utils import print_memory
+from utils import print_max_memory
 
 logger = logging.get_logger(__name__)
 
@@ -471,6 +471,19 @@ class NemotronHMamba2Mixer(nn.Module):
                 )
 
             else:
+                if torch.is_grad_enabled() and hidden_states.requires_grad:
+                    if not self.training:
+                        reason = "the model is in eval mode; call `model.train()` for training"
+                    elif cache_params is not None:
+                        reason = "`use_cache=True`; pass `use_cache=False` while training"
+                    elif not input_not_masked:
+                        reason = "the attention mask contains padding"
+                    else:
+                        reason = "`use_mem_eff_path` is disabled"
+                    logger.warning_once(
+                        f"Mamba memory-efficient training kernel is not being used because {reason}. "
+                        "Falling back to the CUDA chunk scan path, which uses more memory."
+                    )
                 gate, hidden_states_B_C, time_step = torch.split(
                     projected_states,
                     [self.intermediate_size, self.conv_dim, self.num_heads],
@@ -752,7 +765,7 @@ class NemotronHRMSNorm(nn.Module):
 
 
 class NemotronHMLP(nn.Module):
-    def __init__(self, config, intermediate_size=None, **kwargs):
+    def __init__(self, config: NemotronHConfig, intermediate_size=None, **kwargs):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
@@ -763,8 +776,6 @@ class NemotronHMLP(nn.Module):
 
     def forward(self, x):
         h = self.act_fn(self.up_proj(x))
-        print_memory("Hi")
-        # print(f'{(h==0).sum() / h.numel() = }')
         return self.down_proj(h)
 
 
@@ -916,7 +927,7 @@ class NemotronHBlock(GradientCheckpointingLayer):
             `config.layers_block_type[layer_idx]`.
     """
 
-    def __init__(self, config, layer_idx):
+    def __init__(self, config: NemotronHConfig, layer_idx):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -1029,7 +1040,7 @@ class NemotronHPreTrainedModel(PreTrainedModel):
 
 
 class NemotronHModel(NemotronHPreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config: NemotronHConfig):
         super().__init__(config)
 
         self.embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
