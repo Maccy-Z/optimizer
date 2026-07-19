@@ -2,6 +2,7 @@
 *.pt
 /modded-nanogpt/data/fineweb10B/
 *.bin
+*.gz
 
 # PyCharm / JetBrains
 .idea/
